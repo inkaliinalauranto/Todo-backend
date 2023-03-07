@@ -1,54 +1,65 @@
-# Tuodaan FastAPI luokka fastapi paketista
-from fastapi import FastAPI
-
-# Tuodaan BaseModel-luokka pydantic-kirjastosta
+from datetime import datetime
+from fastapi import FastAPI, Response # fastAPI on dokumentaatiosovellus
 from pydantic import BaseModel
+import sqlite3
 
-# Pydantic katsoo tietotyypin Pythonin tyyppivihjeestä
-# FastAPI hyödyntää pydantic-kirjastoa datan validoinnissa
+con = sqlite3.connect("todos.sqlite", check_same_thread=False)
+
+sql_create_todo_table = "CREATE TABLE IF NOT EXISTS todo(id INTEGER PRIMARY KEY, title VARCHAR, description VARCHAR, done INTEGER)"
+
+with con:
+    con.execute(sql_create_todo_table)
 
 class TodoItem(BaseModel):
     id: int
     title: str
-    done: bool # muuttujan arvo on joko True tai False
+    done: bool
+    description: str
 
-# Luodaan uusi fastapi instanssi app nimiseen muuttujaan.
-# Muuttujan nimellä on merkitystä sillä uvicorn tarvitsee tämän 
-# nimen palvelinta käynnistäessä, tässä tapauksessa se on main:app
+class NewTodoItem(BaseModel):
+    title: str
+    description: str
+
 app = FastAPI()
 
-# Käytetään fastapi:n @app.get dekoraattoria todos endpointin luomiseen.
-# Decorator funktio suoritetaan aina ennen sen alapuolella olevaa funktiota
-# Decorator välittää sen alapuolelle määritetylle funktiolle argumentteja. 
-# Tässä tapauksessa turvaudutaan FastAPI:n dokumentaatioon jotta tiedetään mitä
-# argumentteja dekoraattorin alapuolella oleva 
-# funktio ottaa vastaan missäkin tapauksessa.
-@app.get('/todos')
+@app.on_event("shutdown")
+def database_disconnect():
+    con.close()
+
+@app.get('/todos')  # tämän endpoint linkittyy siis fastapiin app:n kautta
 def get_todos(done: bool | None = None):
     if done != None:
         return f"Tässä palautetaan myöhemmin todot, joiden done-status on: {done}"
     return "Tässä palautetaan myöhemmin todo-lista"
 
+'''done: bool | None = None, tällä kerrotaan FastAPI:lle että done on tyyppiä boolean ja 
+sen antaminen on vapaavalintaista. Oletusarvona done:lle asetetaan None. '''
+
 @app.get('/todos/{id}')
 def get_todo_by_id(id:int):
-    # Palautetaan testimielessä funktiosta uusi TodoItem-objekti
     todo_item = TodoItem(id=id, title="testi", done=False)
     return todo_item
 
-# @app.post('/todos') endpoint ottaa vastaan http POST metodilla tehdyn kyselyn (request).
-# todo_item parametri sisältää tässä tapauksessa http bodyn 
-# mukana tulevan JSON muotoisen datan. Pydantic kirjasto varmistaa että JSON
-# data vastaa määriteltyä TodoItem luokkaa kun todo_item:lle on määritetty
-# tyyppivihjeeksi TodoItem (ks. todo_item: TodoItem).
-# FastAPI parsii JSON merkkijonon TodoItem objektiksi automaattisesti
-# kun data on validoitu.
+''' Tämä aiemmin: 
 @app.post('/todos')
 def create_todo(todo_item: TodoItem):
-    # Tulostetaan komentoriville todo_item-parametrista saatu data:
-    print(todo_item)
-    # Palautetaan testimielessä todo_item myös vastauksena.
-    # Myöhemmin tässä funktiossa todo_time lisätään tietokantaan.
-    return todo_item
+    return todo_item'''
+
+@app.post('/todos')
+def create_todo(todo_item: NewTodoItem, response: Response):
+    try:
+        with con:
+            dt = datetime.now()
+            ts = int(datetime.timestamp(dt))
+    
+            cur = con.execute("INSERT INTO todo(title, description, done) VALUES (?, ?, ?)", (todo_item.title, todo_item.description, int(False),))
+            response.status_code = 201
+            return TodoItem(id=cur.lastrowid, title=todo_item.title, done=False, description=todo_item.description)
+        
+    except Exception as e:
+        response.status_code = 500
+        return {"err": str(e)}
+
 
 @app.put('/todos/{id}')
 def update_todo(id: int, todo_item: TodoItem):
@@ -61,3 +72,5 @@ def update_todo_status(id: int, todo_item: TodoItem):
 @app.delete('/todos/{id}')
 def delete_todo(id: int):
     return f"Myöhemmin tässä poistetaan tietokannasta todoitem, jonka id on {id}"
+
+#testi
