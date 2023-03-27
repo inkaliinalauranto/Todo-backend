@@ -3,6 +3,16 @@ from fastapi import FastAPI, Response # fastAPI on dokumentaatiosovellus
 from pydantic import BaseModel
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+import os
+
+load_dotenv(dotenv_path=".env")
+
+api_key = os.environ.get("API_KEY")
+
+headers = {
+    "Authorization": f"Bearer {api_key}"
+}
 
 con = sqlite3.connect("todos.sqlite", check_same_thread=False)
 
